@@ -1,0 +1,16 @@
+project:
+  seed: 42
+  output_dir: outputs
+
+models:
+  device: auto
+  yolo:
+    weights: yolov8n.pt
+    confidence_threshold: 0.25
+    image_size: 640
+    run_name: cctv_yolov8
+    workers: 4
+
+training:
+  epochs: 50
+  batch_size: 16

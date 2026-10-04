@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Local data and generated artifacts
+data/raw/**
+data/processed/**
+data/features/**
+data/sample_data/**
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/features/.gitkeep
+!data/sample_data/.gitkeep
+checkpoints/**
+outputs/**
+!outputs/**/.gitkeep
+
+# Model weights / local secrets
+*.pt
+*.pth
+*.onnx
+.env

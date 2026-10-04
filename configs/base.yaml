@@ -1,0 +1,66 @@
+# Shared defaults. Paths are relative to the project root unless absolute.
+project:
+  name: cctv_video_captioning
+  seed: 42
+  output_dir: outputs
+  checkpoint_dir: checkpoints
+  model_cache_dir: checkpoints/model_cache
+
+data:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  manifest_dir: data/manifests
+  annotation_dir: data/annotations
+  feature_dir: data/features
+  sample_dir: data/sample_data
+  video_extensions: [".mp4", ".avi"]
+  frame_size: 224
+  max_keyframes: 8
+  sample_fps: 2.0
+  motion_threshold: 0.015
+  semantic_similarity_threshold: 0.88
+  minimum_keyframe_gap_seconds: 0.5
+  num_frames: 32
+  sampling_rate: 2
+  clips_per_video: 1
+
+models:
+  device: auto
+  yolo:
+    weights: yolov8n.pt
+    confidence_threshold: 0.25
+    num_classes: 80
+    image_size: 640
+    workers: 4
+    run_name: cctv_yolov8
+  temporal:
+    architecture: slowfast_r50
+    pretrained: true
+    allow_fallback: true
+    fine_tune: true
+    alpha: 4
+    beta_inv: 8
+  caption:
+    tokenizer: t5-small
+    max_length: 32
+    beam_size: 3
+
+visual_encoder:
+  name: resnet18
+  pretrained: true
+  feature_dimension: 512
+  device: auto
+
+training:
+  batch_size: 4
+  epochs: 20
+  learning_rate: 0.0001
+  fine_tuning_learning_rate: 0.00001
+  weight_decay: 0.0001
+  gradient_clip_norm: 1.0
+  mixed_precision: true
+  early_stopping_patience: 5
+
+logging:
+  level: INFO
+  tensorboard: true

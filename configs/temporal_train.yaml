@@ -1,0 +1,30 @@
+project:
+  seed: 42
+  output_dir: outputs
+  model_cache_dir: checkpoints/model_cache
+
+data:
+  num_frames: 32
+  sampling_rate: 2
+  frame_size: 224
+  clips_per_video: 1
+
+models:
+  device: auto
+  temporal:
+    architecture: slowfast_r50
+    pretrained: true
+    allow_fallback: true
+    fine_tune: true
+    alpha: 4
+    beta_inv: 8
+
+training:
+  epochs: 20
+  batch_size: 2
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  gradient_clip_norm: 1.0
+  mixed_precision: true
+  early_stopping_patience: 5
+  workers: 0
