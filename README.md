@@ -168,6 +168,30 @@ Phase 5 unit tests (preprocessing and top-k mapping use an injected test model; 
 pytest -q tests/test_slowfast_action_phase5.py
 ```
 
+## Phase 6: factual CCTV video captioning
+
+`Qwen/Qwen3-VL-4B-Instruct` generates a caption from the source video using Qwen's native video processor and uniform temporal sampling. The default is 16 frames across the full clip; use `--num-frames` to adjust temporal coverage or `--max-pixels` to tune the per-frame visual budget. `--device auto` uses CUDA when PyTorch reports a CUDA device and otherwise uses CPU. An explicit `--device cuda` fails clearly when CUDA is unavailable; no alternate caption model is substituted. Qwen weights are cached under `checkpoints/qwen3_vl/`.
+
+```powershell
+python scripts/caption_video.py .\data\raw\vecteezy_istanbul-turkiye-november-2-2024-tourist-group-is_52424101.mp4 --device cuda --num-frames 16
+```
+
+The command writes `outputs/predictions/<video>_caption.json`. It discovers a matching Phase 5 result automatically and passes confident YOLO labels as optional, non-counting hints; repeated detections are explicitly not treated as unique objects. When no Phase 5 result exists, it can run YOLO on a matching Phase 2 manifest. SlowFast top-1 clip labels are omitted by default because the CCTV tests showed incorrect suggestions. Enable them only with `--use-slowfast-hints`; they remain low-trust context and the prompt directs Qwen to ignore conflicts with the video. The JSON records which hints were supplied or withheld. A model cannot reliably expose its internal hint usage, so the report does not claim that a hint was accepted or ignored internally.
+
+The video frames are always primary evidence. Captions must remain concise and literal, and avoid unsupported counts, intent, crime, emotion, or incident claims. The model is inference-only; Phase 6 does not train or fine-tune Qwen, YOLO, or SlowFast. A CUDA-enabled Colab/T4 runtime is recommended for actual Qwen inference; CPU mode is available but may be slow and require substantial memory.
+
+Install the caption dependencies in addition to the base environment:
+
+```powershell
+python -m pip install -e ".[caption]"
+```
+
+Phase 6 unit tests use injected model/processor stubs and do not download Qwen weights:
+
+```powershell
+pytest -q tests/test_phase6_captioning.py
+```
+
 ## Planned training/evaluation commands
 
 The overall sequence is: inspect manifests and annotations, extract/cache visual keyframes, optionally fine-tune YOLO, optionally train the event/action head, extract remaining modality features, train the caption model on paired human captions, then evaluate on held-out videos and run inference. Temporal modeling, caption training, evaluation, and full inference will be documented in later phases.

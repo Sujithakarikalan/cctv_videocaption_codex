@@ -1,6 +1,7 @@
 """Phase 4 temporal data/model/event tests; no pretrained model weights are downloaded."""
 
 import csv
+import builtins
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -105,14 +106,27 @@ def test_event_classifier_metrics_threshold_and_embedding() -> None:
     assert metrics["confusion_matrix"] == [[2, 0], [0, 2]]
 
 
-def test_temporal_features_mean_pool_clips(tmp_path: Path) -> None:
+def _force_optional_pytorchvideo_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_import = builtins.__import__
+
+    def import_without_pytorchvideo(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "pytorchvideo.models.hub":
+            raise ImportError("test intentionally exercises the documented fallback")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_pytorchvideo)
+
+
+def test_temporal_features_mean_pool_clips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _force_optional_pytorchvideo_missing(monkeypatch)
     encoder = SlowFastEncoder(pretrained=False, allow_fallback=True, fallback_dim=32)
     clips = torch.randint(0, 255, (2, 3, 4, 32, 32), dtype=torch.uint8)
     features = encode_video_clips(encoder, clips, torch.device("cpu"), batch_size=1)
     assert features.shape == (1, 32)
 
 
-def test_event_training_one_epoch_smoke(tmp_path: Path) -> None:
+def test_event_training_one_epoch_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _force_optional_pytorchvideo_missing(monkeypatch)
     rows = []
     for split, seed, label in [
         ("train", 1, "normal"), ("train", 2, "abnormal"),
