@@ -58,7 +58,7 @@ def test_qwen_messages_make_video_primary(tmp_path):
     assert messages[0]["role"] == "system"
     user_video = messages[1]["content"][0]
     assert user_video["type"] == "video"
-    assert user_video["video"].startswith("file:")
+    assert user_video["video"] == str(video.resolve())
     user_prompt = messages[1]["content"][1]["text"]
     assert "verify against the video" in user_prompt
     assert "visually supported" in messages[0]["content"]
@@ -71,7 +71,10 @@ def test_evidence_results_match_when_project_moved_between_hosts(tmp_path):
     assert not matches_video_path(r"C:\old-machine\project\other.mp4", video)
 
 
-def test_mock_qwen_generation_uses_uniform_num_frames(tmp_path):
+def test_mock_qwen_generation_uses_official_video_preprocessing_and_num_frames(tmp_path, monkeypatch):
+    import sys
+    import types
+
     video = tmp_path / "sample.mp4"
     video.write_bytes(b"placeholder; decoder is mocked")
 
@@ -89,6 +92,10 @@ def test_mock_qwen_generation_uses_uniform_num_frames(tmp_path):
         def apply_chat_template(self, messages, **kwargs):
             self.messages = messages
             self.kwargs = kwargs
+            return "formatted Qwen chat"
+
+        def __call__(self, **kwargs):
+            self.processor_kwargs = kwargs
             return Batch()
 
         def batch_decode(self, sequences, **kwargs):
@@ -99,6 +106,21 @@ def test_mock_qwen_generation_uses_uniform_num_frames(tmp_path):
         def generate(self, **kwargs):
             return torch.tensor([[1, 2, 3, 4, 5]])
 
+    decoded_video = torch.zeros((8, 3, 32, 32), dtype=torch.uint8)
+    metadata = {"fps": 1.0, "frames_indices": list(range(8)), "total_num_frames": 8}
+    utils = types.ModuleType("qwen_vl_utils")
+    def mocked_process(messages, **kwargs):
+        content = messages[1]["content"][0]
+        assert content["nframes"] == 8
+        assert kwargs == {
+            "image_patch_size": 16,
+            "return_video_kwargs": True,
+            "return_video_metadata": True,
+        }
+        return None, [(decoded_video, metadata)], {"do_sample_frames": False}
+    utils.process_vision_info = mocked_process
+    monkeypatch.setitem(sys.modules, "qwen_vl_utils", utils)
+
     processor = Processor()
     captioner = Qwen3VideoCaptioner(
         device="cpu", model_name=MODEL_NAME, model=Model(), processor=processor
@@ -108,6 +130,9 @@ def test_mock_qwen_generation_uses_uniform_num_frames(tmp_path):
     assert output.model_name == MODEL_NAME
     assert output.device == "cpu"
     assert output.num_frames == 8
-    assert processor.kwargs["num_frames"] == 8
-    assert processor.kwargs["fps"] is None
-    assert processor.kwargs["return_tensors"] == "pt"
+    assert processor.kwargs == {"tokenize": False, "add_generation_prompt": True}
+    assert processor.processor_kwargs["text"] == "formatted Qwen chat"
+    assert processor.processor_kwargs["video_metadata"] == [metadata]
+    assert processor.processor_kwargs["videos"] == [decoded_video]
+    assert processor.processor_kwargs["do_resize"] is False
+    assert processor.processor_kwargs["do_sample_frames"] is False

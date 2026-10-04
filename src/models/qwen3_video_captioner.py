@@ -52,6 +52,7 @@ def build_caption_messages(
     video_path: str | Path,
     supporting_text: str = "",
     max_pixels: int = 151_200,
+    num_frames: int = 16,
 ) -> list[dict[str, Any]]:
     """Build Qwen's native video message; the source video remains the visual source of truth."""
     path = Path(video_path).expanduser().resolve()
@@ -65,8 +66,12 @@ def build_caption_messages(
             "content": [
                 {
                     "type": "video",
-                    "video": path.as_uri(),
+                    # qwen-vl-utils accepts a local path and decodes it using its
+                    # configured backend. Keep it a path (rather than a file URI)
+                    # for compatibility across Windows and Colab/Linux runtimes.
+                    "video": str(path),
                     "max_pixels": int(max_pixels),
+                    "nframes": int(num_frames),
                 },
                 {"type": "text", "text": user_text},
             ],
@@ -144,21 +149,43 @@ class Qwen3VideoCaptioner:
         path = Path(video_path).expanduser().resolve()
         if not path.is_file():
             raise FileNotFoundError(f"Video file not found: {path}")
-        messages = build_caption_messages(path, supporting_text=supporting_text, max_pixels=max_pixels)
+        messages = build_caption_messages(
+            path, supporting_text=supporting_text, max_pixels=max_pixels, num_frames=num_frames
+        )
         try:
-            inputs = self.processor.apply_chat_template(
+            # Official Qwen3-VL preprocessing path. Transformers 4.57's native
+            # video path expects the decoded video tensor and VideoMetadata;
+            # qwen-vl-utils performs decoding, uniform nframes sampling, and
+            # spatial resize, then returns the metadata required by the processor.
+            from qwen_vl_utils import process_vision_info
+
+            text = self.processor.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+            images, videos, video_kwargs = process_vision_info(
                 messages,
-                tokenize=True,
-                add_generation_prompt=True,
-                return_dict=True,
+                image_patch_size=16,
+                return_video_kwargs=True,
+                return_video_metadata=True,
+            )
+            if videos:
+                videos, video_metadata = zip(*videos)
+                videos, video_metadata = list(videos), list(video_metadata)
+            else:
+                video_metadata = None
+            inputs = self.processor(
+                text=text,
+                images=images,
+                videos=videos,
+                video_metadata=video_metadata,
                 return_tensors="pt",
-                num_frames=num_frames,
-                fps=None,
+                do_resize=False,
+                **(video_kwargs or {}),
             )
         except Exception as exc:
             raise RuntimeError(
-                "Qwen3-VL video preprocessing failed. Check that transformers>=4.57 and qwen-vl-utils "
-                "are installed and that the video can be decoded."
+                "Qwen3-VL video preprocessing failed using qwen-vl-utils and the Transformers video "
+                f"processor: {type(exc).__name__}: {exc}"
             ) from exc
         inputs = inputs.to(self.device)
         if self.device.type == "cuda":
