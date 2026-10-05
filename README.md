@@ -192,6 +192,48 @@ Phase 6 unit tests use injected model/processor stubs and do not download Qwen w
 pytest -q tests/test_phase6_captioning.py
 ```
 
-## Planned training/evaluation commands
+## Phase 7: human-reference caption dataset and evaluation
 
-The overall sequence is: inspect manifests and annotations, extract/cache visual keyframes, optionally fine-tune YOLO, optionally train the event/action head, extract remaining modality features, train the caption model on paired human captions, then evaluate on held-out videos and run inference. Temporal modeling, caption training, evaluation, and full inference will be documented in later phases.
+Phase 7 prepares a small caption-reference dataset and evaluates the existing, inference-only `Qwen/Qwen3-VL-4B-Instruct` model on its held-out `test` rows. It does not train or fine-tune a model. YOLO detections, SlowFast predictions, event labels, and generated captions are not accepted as references. Evaluation calls Qwen on the video itself without YOLO/SlowFast hints.
+
+### Caption manifest format
+
+Use a UTF-8 CSV with exactly one data row per video and these required columns:
+
+| Column | Meaning |
+|---|---|
+| `video_id` | Unique ID for this video row. |
+| `source_id` | ID of the original recording. Different clips cropped from one recording must share this value. |
+| `video_path` | Path to the video. Relative paths are resolved from the manifest's folder. |
+| `split` | `train`, `validation`, or `test`; leave blank before running the split command. |
+| `reference_captions` | JSON array of one or more **human-written** captions, e.g. `["A person walks beside a road."]`. |
+
+An illustrative 3-video CSV is provided at `data/manifests/caption_references.example.csv`. Replace its example IDs, paths, and captions with your own. Every video needs at least one human-written reference caption, including the train and validation rows, because the manifest validator checks the whole dataset. Captions should describe visible people, objects, actions, and setting without inferred intent or unsupported incidents. Repeated `video_id`s, duplicate paths, and byte-identical video files (detected by SHA-256) are invalid. Every `source_id` must occur in only one split.
+
+### Validate and split
+
+Start with blank split values. The splitter needs at least three distinct `source_id` groups to make all three splits. It shuffles groups deterministically and keeps all videos sharing a source together; default ratios are 80/10/10. With only three groups, each split receives one source, so evaluation is a smoke-size quality check and its metrics are highly uncertain. For a tiny hand-curated set, you may instead enter split labels manually, making sure related clips share the same split.
+
+```powershell
+python scripts/prepare_caption_dataset.py validate .\data\manifests\caption_references.csv
+python scripts/prepare_caption_dataset.py split .\data\manifests\caption_references.csv --output .\data\manifests\caption_references_split.csv --seed 42
+python scripts/prepare_caption_dataset.py validate .\data\manifests\caption_references_split.csv --require-splits
+```
+
+The validator reports missing files/captions, malformed reference JSON, invalid split labels, duplicate video IDs, duplicate paths/content, and leakage of an original source across splits. Exact duplicate checking reads each video to compute SHA-256, so validation may take time on large files. Split generation requires valid videos, IDs, and references but may repair existing split assignment/leakage by rewriting the split column.
+
+### Evaluate held-out videos
+
+Install the Qwen caption extras as described in Phase 6, activate the CUDA-enabled Colab/T4 environment, then run:
+
+```powershell
+python scripts/evaluate_captions.py .\data\manifests\caption_references_split.csv --device cuda --num-frames 16
+```
+
+The command loads Qwen once, captions each test video, and saves both machine-readable results and reference/prediction examples for human review to `outputs/predictions/caption_evaluation.json`. Use `--output` to choose another JSON path. Reported metrics are smoothed corpus BLEU-4 and mean per-video best-reference ROUGE-L F1 (each 0–1); they measure text overlap, not factual correctness. Always review saved examples, especially on a small set. Model-load and evaluation timing, device, references, generated captions, and sampling settings are included in the output. No human references means no meaningful evaluation score.
+
+Phase 7 unit tests mock caption generation and do not download Qwen:
+
+```powershell
+pytest -q tests/test_phase7_caption_evaluation.py
+```
