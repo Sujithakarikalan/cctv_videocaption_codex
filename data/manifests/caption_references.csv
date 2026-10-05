@@ -1,0 +1,3 @@
+video_id,source_id,video_path,split,reference_captions
+video_15396218,source_15396218,../raw/15396218_1920_1080_25fps.mp4,test,"[""Cars and vans move through the street while people walk nearby.""]"
+video_14716853,source_14716853,../raw/14716853_3840_2160_60fps.mp4,test,"[""A tram passes through a busy city street as people walk along the sidewalk.""]"
